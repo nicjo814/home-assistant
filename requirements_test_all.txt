@@ -68,6 +68,9 @@ ephem==3.7.6.0
 # homeassistant.components.climate.honeywell
 evohomeclient==0.2.8
 
+# homeassistant.components.media_player.linkplay
+eyeD3==0.8.7
+
 # homeassistant.components.feedreader
 feedparser==5.2.1
 

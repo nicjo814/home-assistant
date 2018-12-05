@@ -118,6 +118,7 @@ TEST_REQUIREMENTS = (
     'vultr',
     'YesssSMS',
     'ruamel.yaml',
+    'eyeD3',
 )
 
 IGNORE_PACKAGES = (

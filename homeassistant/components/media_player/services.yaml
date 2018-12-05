@@ -432,3 +432,13 @@ epson_select_cmode:
     cmode:
       description: Name of Cmode
       example: 'cinema'
+
+linkplay_preset_button:
+  description: Simulate pressing a physical preset button.
+  fields:
+    entity_id:
+      description: Name(s) of entities where the button will be pressed. If omitted the preset will be pressed on all available devices. Platform dependant.
+      example: 'media_player.kitchen'
+    preset:
+      description: The preset button to simulate pressing.
+      example: '1'
