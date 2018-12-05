@@ -35,7 +35,7 @@ DEFAULT_NAME = 'LinkPlay device'
 LASTFM_API_BASE = "http://ws.audioscrobbler.com/2.0/?method="
 
 LINKPLAY_PRESET_BUTTON_SCHEMA = MEDIA_PLAYER_SCHEMA.extend({
-    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+    vol.Required(ATTR_ENTITY_ID): cv.entity_ids,
     vol.Required(ATTR_PRESET): cv.positive_int
 })
 
@@ -89,7 +89,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             target_players = [player for player in hass.data[DATA_LINKPLAY]
                               if player.entity_id in entity_ids]
         else:
-            target_players = hass.data[DATA_LINKPLAY]
+            target_players = None
 
         for player in target_players:
             getattr(player, method['method'])(**params)
