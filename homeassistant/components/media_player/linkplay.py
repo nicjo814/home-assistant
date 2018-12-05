@@ -16,7 +16,8 @@ from homeassistant.components.media_player import (
     DOMAIN, MEDIA_PLAYER_SCHEMA, MEDIA_TYPE_MUSIC, PLATFORM_SCHEMA,
     SUPPORT_NEXT_TRACK, SUPPORT_PAUSE, SUPPORT_PLAY, SUPPORT_PLAY_MEDIA,
     SUPPORT_PREVIOUS_TRACK, SUPPORT_SEEK, SUPPORT_SELECT_SOURCE,
-    SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET, MediaPlayerDevice)
+    SUPPORT_SELECT_SOUND_MODE, SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET,
+    MediaPlayerDevice)
 from homeassistant.const import (
     ATTR_ENTITY_ID, CONF_HOST, CONF_NAME, STATE_PAUSED, STATE_PLAYING,
     STATE_UNKNOWN)
@@ -55,7 +56,7 @@ SERVICE_TO_METHOD = {
         'schema': LINKPLAY_PRESET_BUTTON_SCHEMA}
 }
 
-SUPPORT_LINKPLAY = SUPPORT_SELECT_SOURCE | \
+SUPPORT_LINKPLAY = SUPPORT_SELECT_SOURCE | SUPPORT_SELECT_SOUND_MODE | \
     SUPPORT_VOLUME_SET | SUPPORT_VOLUME_MUTE
 
 SUPPORT_MEDIA_MODES_WIFI = SUPPORT_NEXT_TRACK | SUPPORT_PAUSE | \
@@ -63,6 +64,8 @@ SUPPORT_MEDIA_MODES_WIFI = SUPPORT_NEXT_TRACK | SUPPORT_PAUSE | \
     SUPPORT_PLAY_MEDIA
 
 
+SOUND_MODES = {'0': 'Normal', '1': 'Classic', '2': 'Pop', '3': 'Jazz',
+               '4': 'Vocal'}
 SOURCES = {'wifi': 'WiFi', 'line-in': 'Line-in', 'bluetooth': 'Bluetooth',
            'optical': 'Optical', 'udisk': 'MicroSD'}
 SOURCES_MAP = {'0': 'WiFi', '10': 'WiFi', '31': 'WiFi', '40': 'Line-in',
@@ -123,6 +126,7 @@ class LinkPlayDevice(MediaPlayerDevice):
         self._volume = None
         self._source = None
         self._source_list = SOURCES.copy()
+        self._sound_mode = None
         self._muted = None
         self._seek_position = None
         self._duration = None
@@ -160,19 +164,29 @@ class LinkPlayDevice(MediaPlayerDevice):
         return bool(int(self._muted))
 
     @property
+    def source(self):
+        """Return the current input source."""
+        return self._source
+
+    @property
     def source_list(self):
         """Return the list of available input sources."""
         return sorted(list(self._source_list.values()))
 
     @property
+    def sound_mode(self):
+        """Return the current sound mode."""
+        return self._sound_mode
+
+    @property
+    def sound_mode_list(self):
+        """Return the available sound modes."""
+        return sorted(list(SOUND_MODES.values()))
+
+    @property
     def supported_features(self):
         """Flag media player features that are supported."""
         return SUPPORT_LINKPLAY | SUPPORT_MEDIA_MODES_WIFI
-
-    @property
-    def source(self):
-        """Return the current input source."""
-        return self._source
 
     @property
     def media_position(self):
@@ -306,6 +320,16 @@ class LinkPlayDevice(MediaPlayerDevice):
             _LOGGER.warning("Failed to select source. Got response: %s",
                             value)
 
+    def select_sound_mode(self, sound_mode):
+        """Set Sound Mode for device."""
+        mode = list(SOUND_MODES.keys())[list(
+            SOUND_MODES.values()).index(sound_mode)]
+        self._lpapi.call('GET', 'setPlayerCmd:equalizer:{0}'.format(mode))
+        value = self._lpapi.data
+        if value != "OK":
+            _LOGGER.warning("Failed to set sound mode. Got response: %s",
+                            value)
+
     def preset_button(self, preset):
         """Simulate pressing a physical preset button."""
         self._lpapi.call('GET', 'IOSimuKeyIn:{0}'.format(str(preset).zfill(3)))
@@ -389,6 +413,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             }.get(player_status['status'], STATE_UNKNOWN)
             self._source = SOURCES_MAP.get(player_status['mode'],
                                            'WiFi')
+            self._sound_mode = SOUND_MODES.get(player_status['eq'])
 
             if self._is_playing_new_track(player_status):
                 # nly do some things when a new track is playing.
