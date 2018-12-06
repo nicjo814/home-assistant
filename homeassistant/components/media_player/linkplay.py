@@ -372,11 +372,16 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def _update_from_id3(self):
         """Update track info with eyed3."""
-        filename, header = urllib.request.urlretrieve(self._media_uri)
-        audiofile = self._eyed3.load(filename)
-        self._media_title = audiofile.tag.title
-        self._media_artist = audiofile.tag.artist
-        self._media_album = audiofile.tag.album
+        try:
+            filename, header = urllib.request.urlretrieve(self._media_uri)
+            audiofile = self._eyed3.load(filename)
+            self._media_title = audiofile.tag.title
+            self._media_artist = audiofile.tag.artist
+            self._media_album = audiofile.tag.album
+        except urllib.error.URLError:
+            self._media_title = None
+            self._media_artist = None
+            self._media_album = None
 
     def _get_lastfm_coverart(self):
         """Get cover art from last.fm."""
@@ -449,10 +454,11 @@ class LinkPlayDevice(MediaPlayerDevice):
 
                 elif self._is_playing_mp3():
                     self._update_from_id3()
-                    if self._lfmapi is not None:
+                    if self._lfmapi is not None and\
+                            self._media_title is not None:
                         try:
                             self._get_lastfm_coverart()
-                        except ValueError:
+                        except (ValueError, KeyError):
                             self._media_image_url = None
                     else:
                         self._media_image_url = None
