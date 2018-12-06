@@ -420,7 +420,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._seek_position = int(int(player_status['curpos']) / 1000)
             self._position_updated_at = utcnow()
             self._media_uri = str(bytearray.fromhex(
-                player_status['uri']).decode())
+                player_status['iuri']).decode())
             self._state = {
                 'stop': STATE_PAUSED,
                 'play': STATE_PLAYING,
