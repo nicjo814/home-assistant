@@ -293,8 +293,7 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def media_seek(self, position):
         """Send media_seek command to media player."""
-        new_pos = str(position * 1000)
-        self._lpapi.call('GET', 'setPlayerCmd:seek:{0}'.format(new_pos))
+        self._lpapi.call('GET', 'setPlayerCmd:seek:{0}'.format(str(position)))
         value = self._lpapi.data
         if value != "OK":
             _LOGGER.warning("Failed to seek. Got response: %s",
