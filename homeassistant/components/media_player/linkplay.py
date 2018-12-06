@@ -16,8 +16,8 @@ from homeassistant.components.media_player import (
     DOMAIN, MEDIA_PLAYER_SCHEMA, MEDIA_TYPE_MUSIC, PLATFORM_SCHEMA,
     SUPPORT_NEXT_TRACK, SUPPORT_PAUSE, SUPPORT_PLAY, SUPPORT_PLAY_MEDIA,
     SUPPORT_PREVIOUS_TRACK, SUPPORT_SEEK, SUPPORT_SELECT_SOURCE,
-    SUPPORT_SELECT_SOUND_MODE, SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET,
-    MediaPlayerDevice)
+    SUPPORT_SELECT_SOUND_MODE, SUPPORT_SHUFFLE_SET, SUPPORT_VOLUME_MUTE,
+    SUPPORT_VOLUME_SET, MediaPlayerDevice)
 from homeassistant.const import (
     ATTR_ENTITY_ID, CONF_HOST, CONF_NAME, STATE_PAUSED, STATE_PLAYING,
     STATE_UNKNOWN)
@@ -57,7 +57,7 @@ SERVICE_TO_METHOD = {
 }
 
 SUPPORT_LINKPLAY = SUPPORT_SELECT_SOURCE | SUPPORT_SELECT_SOUND_MODE | \
-    SUPPORT_VOLUME_SET | SUPPORT_VOLUME_MUTE
+    SUPPORT_SHUFFLE_SET | SUPPORT_VOLUME_SET | SUPPORT_VOLUME_MUTE
 
 SUPPORT_MEDIA_MODES_WIFI = SUPPORT_NEXT_TRACK | SUPPORT_PAUSE | \
     SUPPORT_PLAY | SUPPORT_SEEK | SUPPORT_PREVIOUS_TRACK | SUPPORT_SEEK | \
@@ -131,6 +131,7 @@ class LinkPlayDevice(MediaPlayerDevice):
         self._seek_position = None
         self._duration = None
         self._position_updated_at = None
+        self._shuffle = None
         self._media_album = None
         self._media_artist = None
         self._media_title = None
@@ -202,6 +203,11 @@ class LinkPlayDevice(MediaPlayerDevice):
     def media_position_updated_at(self):
         """When the seek position was last updated."""
         return self._position_updated_at
+
+    @property
+    def shuffle(self):
+        """Return True if shuffle mode is enabled."""
+        return self._shuffle
 
     @property
     def media_title(self):
@@ -330,6 +336,15 @@ class LinkPlayDevice(MediaPlayerDevice):
             _LOGGER.warning("Failed to set sound mode. Got response: %s",
                             value)
 
+    def set_shuffle(self, shuffle):
+        """Change the shuffle mode."""
+        mode = '2' if shuffle else '0'
+        self._lpapi.call('GET', 'setPlayerCmd:loopmode:{0}'.format(mode))
+        value = self._lpapi.data
+        if value != "OK":
+            _LOGGER.warning("Failed to change shuffle mode. Got response: %s",
+                            value)
+
     def preset_button(self, preset):
         """Simulate pressing a physical preset button."""
         self._lpapi.call('GET', 'IOSimuKeyIn:{0}'.format(str(preset).zfill(3)))
@@ -414,6 +429,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._source = SOURCES_MAP.get(player_status['mode'],
                                            'WiFi')
             self._sound_mode = SOUND_MODES.get(player_status['eq'])
+            self._shuffle = True if player_status['loop'] == '2' else False
 
             if self._is_playing_new_track(player_status):
                 # nly do some things when a new track is playing.
