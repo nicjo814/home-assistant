@@ -394,7 +394,7 @@ class LinkPlayDevice(MediaPlayerDevice):
         try:
             self._media_image_url = \
                     lfmdata['track']['album']['image'][2]['#text']
-        except ValueError:
+        except (ValueError, KeyError):
             self._media_image_url = None
 
     def update(self):
@@ -455,11 +455,8 @@ class LinkPlayDevice(MediaPlayerDevice):
                 elif self._is_playing_mp3():
                     self._update_from_id3()
                     if self._lfmapi is not None and\
-                            self._media_title is not None:
-                        try:
-                            self._get_lastfm_coverart()
-                        except (ValueError, KeyError):
-                            self._media_image_url = None
+                        self._media_title is not None:
+                        self._get_lastfm_coverart()
                     else:
                         self._media_image_url = None
 
