@@ -354,8 +354,17 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def _is_playing_new_track(self, status):
         """Check if track is changed since last update."""
-        return bool((int(int(status['totlen']) / 1000) != self._duration) or
-                    status['Title'] != self._media_title)
+        if (int(int(status['totlen']) / 1000) != self._duration):
+            return True
+        elif status['totlen'] == '0':
+            #Special case when listening to radio
+            if bytes.fromhex(status['Title']).decode('utf-8') !=\
+               self._media_title:
+                return True
+            else:
+                return False
+        else:
+            return False
 
     def _is_playing_mp3(self):
         """Check if the current track is an MP3 file."""
@@ -433,18 +442,17 @@ class LinkPlayDevice(MediaPlayerDevice):
             if self._is_playing_new_track(player_status):
                 # Only do some things when a new track is playing.
 
-                # Use track title provided by device api.
-                self._media_title = str(bytearray.fromhex(
-                    player_status['Title']).decode())
-                self._media_artist = str(bytearray.fromhex(
-                    player_status['Artist']).decode())
-
                 if self._is_playing_spotify():
                     self._media_title = 'Spotify'
                     self._media_artist = 'Spotify'
 
                 # Check if we are playing radio
                 elif player_status['totlen'] == '0':
+                    # Use track title provided by device api.
+                    self._media_title = bytes.fromhex(
+                        player_status['Title']).decode('utf-8')
+                    self._media_artist = bytes.fromhex(
+                        player_status['Artist']).decode('utf-8')
                     self._media_album = ""
                     self._media_image_url = None
 
