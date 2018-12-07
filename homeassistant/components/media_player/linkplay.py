@@ -354,13 +354,8 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def _is_playing_new_track(self, status):
         """Check if track is changed since last update."""
-        return bool(int(int(status['totlen']) / 1000) != self._duration)
-
-    def _is_playing_radio(self):
-        """Check if the current track is a radio stream."""
-        return bool(((self._media_uri != "") and
-                     (self._media_uri.find('.mp3',
-                                           len(self._media_uri)-4) == -1)))
+        return bool((int(int(status['totlen']) / 1000) != self._duration) or
+                    status['Title'] != self._media_title)
 
     def _is_playing_mp3(self):
         """Check if the current track is an MP3 file."""
@@ -436,7 +431,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._shuffle = True if player_status['loop'] == '2' else False
 
             if self._is_playing_new_track(player_status):
-                # nly do some things when a new track is playing.
+                # Only do some things when a new track is playing.
 
                 # Use track title provided by device api.
                 self._media_title = str(bytearray.fromhex(
@@ -448,14 +443,15 @@ class LinkPlayDevice(MediaPlayerDevice):
                     self._media_title = 'Spotify'
                     self._media_artist = 'Spotify'
 
-                elif self._is_playing_radio():
+                # Check if we are playing radio
+                elif player_status['totlen'] == '0':
                     self._media_album = ""
                     self._media_image_url = None
 
                 elif self._is_playing_mp3():
                     self._update_from_id3()
                     if self._lfmapi is not None and\
-                        self._media_title is not None:
+                            self._media_title is not None:
                         self._get_lastfm_coverart()
                     else:
                         self._media_image_url = None
