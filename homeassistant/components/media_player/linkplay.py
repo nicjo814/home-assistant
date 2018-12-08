@@ -7,6 +7,8 @@ https://home-assistant.io/components/media_player.linkplay/
 
 import json
 import logging
+import os
+import tempfile
 import urllib.request
 
 import requests
@@ -382,6 +384,10 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._media_title = audiofile.tag.title
             self._media_artist = audiofile.tag.artist
             self._media_album = audiofile.tag.album
+            # Remove tempfile when done
+            if filename.startswith(tempfile.gettempdir()):
+                os.remove(filename)
+
         except urllib.error.URLError:
             self._media_title = None
             self._media_artist = None
