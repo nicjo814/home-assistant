@@ -46,7 +46,7 @@ MAX_VOL = 100
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_HOST): cv.string,
-    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+    vol.Optional(CONF_NAME): cv.string,
     vol.Optional(CONF_LASTFM_API_KEY): cv.string
 })
 
@@ -105,8 +105,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             DOMAIN, service, _service_handler, schema=schema)
 
     linkplay = LinkPlayDevice(eyed3,
-                              config.get(CONF_NAME),
                               config.get(CONF_HOST),
+                              config.get(CONF_NAME),
                               config.get(CONF_LASTFM_API_KEY))
 
     if linkplay.update() is False:
@@ -119,7 +119,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 class LinkPlayDevice(MediaPlayerDevice):
     """Representation of a LinkPlay device."""
 
-    def __init__(self, eyed3, name, host, lfm_api_key=None):
+    def __init__(self, eyed3, host, name=None, lfm_api_key=None):
         """Initialize the LinkPlay device."""
         self._eyed3 = eyed3
         self._name = name
@@ -356,17 +356,13 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def _is_playing_new_track(self, status):
         """Check if track is changed since last update."""
-        if (int(int(status['totlen']) / 1000) != self._duration):
+        if int(int(status['totlen']) / 1000) != self._duration:
             return True
-        elif status['totlen'] == '0':
-            #Special case when listening to radio
-            if bytes.fromhex(status['Title']).decode('utf-8') !=\
-               self._media_title:
-                return True
-            else:
-                return False
-        else:
-            return False
+        if status['totlen'] == '0':
+            # Special case when listening to radio
+            return bool(bytes.fromhex(
+                status['Title']).decode('utf-8') != self._media_title)
+        return False
 
     def _is_playing_mp3(self):
         """Check if the current track is an MP3 file."""
@@ -408,18 +404,18 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._media_image_url = None
 
     def update(self):
-        """Get the latest details from the device."""
+        """Get the latest player details from the device."""
         self._lpapi.call('GET', 'getPlayerStatus')
-        value = self._lpapi.data
+        player_api_result = self._lpapi.data
 
-        if value is None:
+        if player_api_result is None:
             return False
 
         try:
-            player_status = json.loads(value)
+            player_status = json.loads(player_api_result)
         except ValueError:
             _LOGGER.warning("REST result could not be parsed as JSON")
-            _LOGGER.debug("Erroneous JSON: %s", value)
+            _LOGGER.debug("Erroneous JSON: %s", player_api_result)
             player_status = None
 
         if isinstance(player_status, dict):
@@ -427,6 +423,16 @@ class LinkPlayDevice(MediaPlayerDevice):
             if self._first_update:
                 # Get device information only at startup.
                 self._first_update = False
+                self._lpapi.call('GET', 'getStatus')
+                device_api_result = self._lpapi.data
+                try:
+                    device_status = json.loads(device_api_result)
+                except ValueError:
+                    _LOGGER.warning("REST result could not be parsed as JSON")
+                    _LOGGER.debug("Erroneous JSON: %s", device_api_result)
+                if isinstance(device_status, dict):
+                    if self._name is None:
+                        self._name = device_status['DeviceName']
 
             # Update variables that changes during playback of a track.
             self._volume = player_status['vol']
