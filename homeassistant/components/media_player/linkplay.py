@@ -18,8 +18,8 @@ import voluptuous as vol
 from homeassistant.components.media_player import (
     DOMAIN, MEDIA_PLAYER_SCHEMA, MEDIA_TYPE_MUSIC, PLATFORM_SCHEMA,
     SUPPORT_NEXT_TRACK, SUPPORT_PAUSE, SUPPORT_PLAY, SUPPORT_PLAY_MEDIA,
-    SUPPORT_PREVIOUS_TRACK, SUPPORT_SEEK, SUPPORT_SELECT_SOURCE,
-    SUPPORT_SELECT_SOUND_MODE, SUPPORT_SHUFFLE_SET, SUPPORT_VOLUME_MUTE,
+    SUPPORT_PREVIOUS_TRACK, SUPPORT_SEEK, SUPPORT_SELECT_SOUND_MODE,
+    SUPPORT_SELECT_SOURCE, SUPPORT_SHUFFLE_SET, SUPPORT_VOLUME_MUTE,
     SUPPORT_VOLUME_SET, MediaPlayerDevice)
 from homeassistant.const import (
     ATTR_ENTITY_ID, CONF_HOST, CONF_NAME, STATE_PAUSED, STATE_PLAYING,
@@ -81,9 +81,6 @@ UPNP_DESCRIPTION = 'description.xml'
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the LinkPlay device."""
-    import eyed3
-    import upnpclient
-
     if DATA_LINKPLAY not in hass.data:
         hass.data[DATA_LINKPLAY] = []
 
@@ -110,12 +107,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         hass.services.register(
             DOMAIN, service, _service_handler, schema=schema)
 
-    upnp_device = upnpclient.Device("http://" + config.get(CONF_HOST) + ":" +
-                                    UPNP_PORT + "/" + UPNP_DESCRIPTION)
-
-    linkplay = LinkPlayDevice(eyed3,
-                              upnp_device,
-                              config.get(CONF_HOST),
+    linkplay = LinkPlayDevice(config.get(CONF_HOST),
                               config.get(CONF_NAME),
                               config.get(CONF_LASTFM_API_KEY))
 
@@ -129,9 +121,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 class LinkPlayDevice(MediaPlayerDevice):
     """Representation of a LinkPlay device."""
 
-    def __init__(self, eyed3, upnp_device, host, name=None, lfm_api_key=None):
+    def __init__(self, host, name=None, lfm_api_key=None):
         """Initialize the LinkPlay device."""
-        self._eyed3 = eyed3
         self._name = name
         self._host = host
         self._state = STATE_UNKNOWN
@@ -155,7 +146,8 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._lfmapi = LastFMRestData(lfm_api_key)
         else:
             self._lfmapi = None
-        self._upnp_device = upnp_device
+        self._upnp_target = "http://{0}:{1}/{2}". format(self._host, UPNP_PORT,
+                                                        UPNP_DESCRIPTION)
 
     @property
     def name(self):
@@ -385,7 +377,10 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def _update_from_spotify(self):
         """Update track info when playing from Spotify."""
-        media_info = self._upnp_device.AVTransport.GetMediaInfo(InstanceID=0)
+        import upnpclient
+
+        upnp_device = upnpclient.Device(self._upnp_target)
+        media_info = upnp_device.AVTransport.GetMediaInfo(InstanceID=0)
         media_info = media_info.get('CurrentURIMetaData')
         xml_tree = ET.fromstring(media_info)
         xml_path = "{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}item/"
@@ -404,9 +399,10 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def _update_from_id3(self):
         """Update track info with eyed3."""
+        import eyed3
         try:
             filename, header = urllib.request.urlretrieve(self._media_uri)
-            audiofile = self._eyed3.load(filename)
+            audiofile = eyed3.load(filename)
             self._media_title = audiofile.tag.title
             self._media_artist = audiofile.tag.artist
             self._media_album = audiofile.tag.album
