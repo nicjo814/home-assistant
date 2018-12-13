@@ -10,6 +10,7 @@ import logging
 import os
 import tempfile
 import urllib.request
+import xml.etree.ElementTree as ET
 
 import requests
 import voluptuous as vol
@@ -28,6 +29,8 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.util.dt import utcnow
 
 REQUIREMENTS = ['eyeD3==0.8.7']
+REQUIREMENTS = ['uPnPClient==0.0.8']
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,11 +75,14 @@ SOURCES = {'wifi': 'WiFi', 'line-in': 'Line-in', 'bluetooth': 'Bluetooth',
            'optical': 'Optical', 'udisk': 'MicroSD'}
 SOURCES_MAP = {'0': 'WiFi', '10': 'WiFi', '31': 'WiFi', '40': 'Line-in',
                '41': 'Bluetooth', '43': 'Optical'}
+UPNP_PORT = '49152'
+UPNP_DESCRIPTION = 'description.xml'
 
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the LinkPlay device."""
     import eyed3
+    import upnpclient
 
     if DATA_LINKPLAY not in hass.data:
         hass.data[DATA_LINKPLAY] = []
@@ -104,7 +110,11 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         hass.services.register(
             DOMAIN, service, _service_handler, schema=schema)
 
+    upnp_device = upnpclient.Device("http://" + config.get(CONF_HOST) + ":" +
+                                    UPNP_PORT + "/" + UPNP_DESCRIPTION)
+
     linkplay = LinkPlayDevice(eyed3,
+                              upnp_device,
                               config.get(CONF_HOST),
                               config.get(CONF_NAME),
                               config.get(CONF_LASTFM_API_KEY))
@@ -119,7 +129,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 class LinkPlayDevice(MediaPlayerDevice):
     """Representation of a LinkPlay device."""
 
-    def __init__(self, eyed3, host, name=None, lfm_api_key=None):
+    def __init__(self, eyed3, upnp_device, host, name=None, lfm_api_key=None):
         """Initialize the LinkPlay device."""
         self._eyed3 = eyed3
         self._name = name
@@ -145,6 +155,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._lfmapi = LastFMRestData(lfm_api_key)
         else:
             self._lfmapi = None
+        self._upnp_device = upnp_device
 
     @property
     def name(self):
@@ -372,6 +383,25 @@ class LinkPlayDevice(MediaPlayerDevice):
         return bool(((self._media_title == 'Unknown') and
                      (self._media_artist == 'Unknown')))
 
+    def _update_from_spotify(self):
+        """Update track info when playing from Spotify."""
+        media_info = self._upnp_device.AVTransport.GetMediaInfo(InstanceID=0)
+        media_info = media_info.get('CurrentURIMetaData')
+        xml_tree = ET.fromstring(media_info)
+        xml_path = "{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}item/"
+        title_xml_path = "{http://purl.org/dc/elements/1.1/}title"
+        artist_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}artist"
+        album_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}album"
+        image_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}albumArtURI"
+        self._media_title = \
+            xml_tree.find("{0}{1}". format(xml_path, title_xml_path)).text
+        self._media_artist = \
+            xml_tree.find("{0}{1}". format(xml_path, artist_xml_path)).text
+        self._media_album = \
+            xml_tree.find("{0}{1}". format(xml_path, album_xml_path)).text
+        self._media_image_url = \
+            xml_tree.find("{0}{1}". format(xml_path, image_xml_path)).text
+
     def _update_from_id3(self):
         """Update track info with eyed3."""
         try:
@@ -453,18 +483,17 @@ class LinkPlayDevice(MediaPlayerDevice):
 
             if self._is_playing_new_track(player_status):
                 # Only do some things when a new track is playing.
+                # Use track title provided by device api.
+                self._media_title = bytes.fromhex(
+                    player_status['Title']).decode('utf-8')
+                self._media_artist = bytes.fromhex(
+                    player_status['Artist']).decode('utf-8')
 
                 if self._is_playing_spotify():
-                    self._media_title = 'Spotify'
-                    self._media_artist = 'Spotify'
+                    self._update_from_spotify()
 
                 # Check if we are playing radio
                 elif player_status['totlen'] == '0':
-                    # Use track title provided by device api.
-                    self._media_title = bytes.fromhex(
-                        player_status['Title']).decode('utf-8')
-                    self._media_artist = bytes.fromhex(
-                        player_status['Artist']).decode('utf-8')
                     self._media_album = ""
                     self._media_image_url = None
 
