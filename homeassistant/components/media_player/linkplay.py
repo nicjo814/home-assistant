@@ -367,16 +367,14 @@ class LinkPlayDevice(MediaPlayerDevice):
                 status['Title']).decode('utf-8') != self._media_title)
         return False
 
-    def _is_playing_mp3(self):
-        """Check if the current track is an MP3 file."""
-        return bool(self._media_uri.find('.mp3', len(self._media_uri)-4) != -1)
+    def _is_playing_spotify(self, player_status):
+        title =  bytes.fromhex(player_status['Title']).decode('utf-8')
+        artist = bytes.fromhex(player_status['Artist']).decode('utf-8')
+        return bool(((title == 'Unknown') and
+                     (artist == 'Unknown')))
 
-    def _is_playing_spotify(self):
-        return bool(((self._media_title == 'Unknown') and
-                     (self._media_artist == 'Unknown')))
-
-    def _update_from_spotify(self):
-        """Update track info when playing from Spotify."""
+    def _update_via_upnp(self):
+        """Update track info when via UPNP."""
         import upnpclient
 
         upnp_device = upnpclient.Device(self._upnp_target)
@@ -479,21 +477,11 @@ class LinkPlayDevice(MediaPlayerDevice):
 
             if self._is_playing_new_track(player_status):
                 # Only do some things when a new track is playing.
-                # Use track title provided by device api.
-                self._media_title = bytes.fromhex(
-                    player_status['Title']).decode('utf-8')
-                self._media_artist = bytes.fromhex(
-                    player_status['Artist']).decode('utf-8')
+                if self._is_playing_spotify(player_status) or \
+                   player_status['totlen'] == '0':
+                    self._update_via_upnp()
 
-                if self._is_playing_spotify():
-                    self._update_from_spotify()
-
-                # Check if we are playing radio
-                elif player_status['totlen'] == '0':
-                    self._media_album = ""
-                    self._media_image_url = None
-
-                elif self._is_playing_mp3():
+                else:
                     self._update_from_id3()
                     if self._lfmapi is not None and\
                             self._media_title is not None:
