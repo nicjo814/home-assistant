@@ -30,7 +30,7 @@ from homeassistant.util.dt import utcnow
 
 REQUIREMENTS = ['eyeD3==0.8.7']
 REQUIREMENTS = ['uPnPClient==0.0.8']
-
+REQUIREMENTS = ['validators==0.12.3']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,9 +75,7 @@ SOURCES = {'wifi': 'WiFi', 'line-in': 'Line-in', 'bluetooth': 'Bluetooth',
            'optical': 'Optical', 'udisk': 'MicroSD'}
 SOURCES_MAP = {'0': 'WiFi', '10': 'WiFi', '31': 'WiFi', '40': 'Line-in',
                '41': 'Bluetooth', '43': 'Optical'}
-UPNP_PORT = '49152'
-UPNP_DESCRIPTION = 'description.xml'
-
+UPNP_TIMEOUT = 5
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the LinkPlay device."""
@@ -146,8 +144,6 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._lfmapi = LastFMRestData(lfm_api_key)
         else:
             self._lfmapi = None
-        self._upnp_target = "http://{0}:{1}/{2}". format(self._host, UPNP_PORT,
-                                                        UPNP_DESCRIPTION)
 
     @property
     def name(self):
@@ -374,26 +370,44 @@ class LinkPlayDevice(MediaPlayerDevice):
                      (artist == 'Unknown')))
 
     def _update_via_upnp(self):
-        """Update track info when via UPNP."""
+        """Update track info via UPNP."""
         import upnpclient
+        from netdisco.ssdp import scan
+        import validators
 
-        upnp_device = upnpclient.Device(self._upnp_target)
-        media_info = upnp_device.AVTransport.GetMediaInfo(InstanceID=0)
-        media_info = media_info.get('CurrentURIMetaData')
-        xml_tree = ET.fromstring(media_info)
-        xml_path = "{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}item/"
-        title_xml_path = "{http://purl.org/dc/elements/1.1/}title"
-        artist_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}artist"
-        album_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}album"
-        image_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}albumArtURI"
-        self._media_title = \
-            xml_tree.find("{0}{1}". format(xml_path, title_xml_path)).text
-        self._media_artist = \
-            xml_tree.find("{0}{1}". format(xml_path, artist_xml_path)).text
-        self._media_album = \
-            xml_tree.find("{0}{1}". format(xml_path, album_xml_path)).text
-        self._media_image_url = \
-            xml_tree.find("{0}{1}". format(xml_path, image_xml_path)).text
+        devices = {}
+        for entry in scan(UPNP_TIMEOUT):
+            if entry.location in devices:
+                continue
+            try:
+                devices[entry.location] = upnpclient.Device(entry.location)
+            except Exception:
+                pass
+
+        devices = list(devices.values())
+        for device in devices:
+            if device.friendly_name == self._name:
+                media_info = device.AVTransport.GetMediaInfo(InstanceID=0)
+                media_info = media_info.get('CurrentURIMetaData')
+                xml_tree = ET.fromstring(media_info)
+                xml_path = "{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}item/"
+                title_xml_path = "{http://purl.org/dc/elements/1.1/}title"
+                artist_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}artist"
+                album_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}album"
+                image_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}albumArtURI"
+                self._media_title = \
+                    xml_tree.find("{0}{1}".format(xml_path, title_xml_path)).text
+                self._media_artist = \
+                    xml_tree.find("{0}{1}".format(xml_path, artist_xml_path)).text
+                self._media_album = \
+                    xml_tree.find("{0}{1}".format(xml_path, album_xml_path)).text
+                self._media_image_url = \
+                        xml_tree.find("{0}{1}".format(xml_path, image_xml_path)).text
+
+                if not validators.url(self._media_image_url):
+                    self._media_image_url = None
+
+                break
 
     def _update_from_id3(self):
         """Update track info with eyed3."""
