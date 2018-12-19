@@ -144,6 +144,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._lfmapi = LastFMRestData(lfm_api_key)
         else:
             self._lfmapi = None
+        self._upnp_device = None
 
     @property
     def name(self):
@@ -371,43 +372,27 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def _update_via_upnp(self):
         """Update track info via UPNP."""
-        import upnpclient
-        from netdisco.ssdp import scan
         import validators
 
-        devices = {}
-        for entry in scan(UPNP_TIMEOUT):
-            if entry.location in devices:
-                continue
-            try:
-                devices[entry.location] = upnpclient.Device(entry.location)
-            except Exception:
-                pass
+        media_info = self._upnp_device.AVTransport.GetMediaInfo(InstanceID=0)
+        media_info = media_info.get('CurrentURIMetaData')
+        xml_tree = ET.fromstring(media_info)
+        xml_path = "{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}item/"
+        title_xml_path = "{http://purl.org/dc/elements/1.1/}title"
+        artist_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}artist"
+        album_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}album"
+        image_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}albumArtURI"
+        self._media_title = \
+            xml_tree.find("{0}{1}".format(xml_path, title_xml_path)).text
+        self._media_artist = \
+            xml_tree.find("{0}{1}".format(xml_path, artist_xml_path)).text
+        self._media_album = \
+            xml_tree.find("{0}{1}".format(xml_path, album_xml_path)).text
+        self._media_image_url = \
+            xml_tree.find("{0}{1}".format(xml_path, image_xml_path)).text
 
-        devices = list(devices.values())
-        for device in devices:
-            if device.friendly_name == self._name:
-                media_info = device.AVTransport.GetMediaInfo(InstanceID=0)
-                media_info = media_info.get('CurrentURIMetaData')
-                xml_tree = ET.fromstring(media_info)
-                xml_path = "{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}item/"
-                title_xml_path = "{http://purl.org/dc/elements/1.1/}title"
-                artist_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}artist"
-                album_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}album"
-                image_xml_path = "{urn:schemas-upnp-org:metadata-1-0/upnp/}albumArtURI"
-                self._media_title = \
-                    xml_tree.find("{0}{1}".format(xml_path, title_xml_path)).text
-                self._media_artist = \
-                    xml_tree.find("{0}{1}".format(xml_path, artist_xml_path)).text
-                self._media_album = \
-                    xml_tree.find("{0}{1}".format(xml_path, album_xml_path)).text
-                self._media_image_url = \
-                        xml_tree.find("{0}{1}".format(xml_path, image_xml_path)).text
-
-                if not validators.url(self._media_image_url):
-                    self._media_image_url = None
-
-                break
+        if not validators.url(self._media_image_url):
+            self._media_image_url = None
 
     def _update_from_id3(self):
         """Update track info with eyed3."""
@@ -443,6 +428,25 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def update(self):
         """Get the latest player details from the device."""
+        import upnpclient
+        from netdisco.ssdp import scan
+
+        if self._upnp_device is None:
+            devices = {}
+            for entry in scan(UPNP_TIMEOUT):
+                if entry.location in devices:
+                    continue
+                try:
+                    devices[entry.location] = upnpclient.Device(entry.location)
+                except Exception:
+                    pass
+
+            devices = list(devices.values())
+            for device in devices:
+                if device.friendly_name == self._name:
+                    self._upnp_device = device
+                    break
+
         self._lpapi.call('GET', 'getPlayerStatus')
         player_api_result = self._lpapi.data
 
