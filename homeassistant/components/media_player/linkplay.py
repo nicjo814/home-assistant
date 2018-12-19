@@ -5,6 +5,7 @@ For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/media_player.linkplay/
 """
 
+import binascii
 import json
 import logging
 import os
@@ -24,7 +25,6 @@ from homeassistant.components.media_player import (
 from homeassistant.const import (
     ATTR_ENTITY_ID, CONF_HOST, CONF_NAME, STATE_PAUSED, STATE_PLAYING,
     STATE_UNKNOWN)
-from homeassistant.exceptions import PlatformNotReady
 import homeassistant.helpers.config_validation as cv
 from homeassistant.util.dt import utcnow
 
@@ -34,15 +34,25 @@ REQUIREMENTS = ['validators==0.12.3']
 
 _LOGGER = logging.getLogger(__name__)
 
+ATTR_MASTER = 'master_id'
 ATTR_PRESET = 'preset'
+ATTR_SLAVES = 'slave_ids'
 CONF_LASTFM_API_KEY = 'lastfm_api_key'
 DATA_LINKPLAY = 'linkplay'
 DEFAULT_NAME = 'LinkPlay device'
 LASTFM_API_BASE = "http://ws.audioscrobbler.com/2.0/?method="
 
+LINKPLAY_CONNECT_MULTIROOM_SCHEMA = MEDIA_PLAYER_SCHEMA.extend({
+    vol.Required(ATTR_ENTITY_ID): cv.entity_id,
+    vol.Required(ATTR_MASTER): cv.entity_id
+})
 LINKPLAY_PRESET_BUTTON_SCHEMA = MEDIA_PLAYER_SCHEMA.extend({
     vol.Required(ATTR_ENTITY_ID): cv.entity_ids,
     vol.Required(ATTR_PRESET): cv.positive_int
+})
+LINKPLAY_REMOVE_SLAVES_SCHEMA = MEDIA_PLAYER_SCHEMA.extend({
+    vol.Required(ATTR_ENTITY_ID): cv.entity_id,
+    vol.Required(ATTR_SLAVES): cv.entity_ids
 })
 
 MAX_VOL = 100
@@ -53,12 +63,20 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_LASTFM_API_KEY): cv.string
 })
 
+SERVICE_CONNECT_MULTIROOM = 'linkplay_connect_multiroom'
 SERVICE_PRESET_BUTTON = 'linkplay_preset_button'
+SERVICE_REMOVE_SLAVES = 'linkplay_remove_slaves'
 
 SERVICE_TO_METHOD = {
+    SERVICE_CONNECT_MULTIROOM: {
+        'method': 'connect_multiroom',
+        'schema': LINKPLAY_CONNECT_MULTIROOM_SCHEMA},
     SERVICE_PRESET_BUTTON: {
         'method': 'preset_button',
-        'schema': LINKPLAY_PRESET_BUTTON_SCHEMA}
+        'schema': LINKPLAY_PRESET_BUTTON_SCHEMA},
+    SERVICE_REMOVE_SLAVES: {
+        'method': 'remove_slaves',
+        'schema': LINKPLAY_REMOVE_SLAVES_SCHEMA}
 }
 
 SUPPORT_LINKPLAY = SUPPORT_SELECT_SOURCE | SUPPORT_SELECT_SOUND_MODE | \
@@ -76,6 +94,7 @@ SOURCES = {'wifi': 'WiFi', 'line-in': 'Line-in', 'bluetooth': 'Bluetooth',
 SOURCES_MAP = {'0': 'WiFi', '10': 'WiFi', '31': 'WiFi', '40': 'Line-in',
                '41': 'Bluetooth', '43': 'Optical'}
 UPNP_TIMEOUT = 5
+
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the LinkPlay device."""
@@ -109,9 +128,6 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                               config.get(CONF_NAME),
                               config.get(CONF_LASTFM_API_KEY))
 
-    if linkplay.update() is False:
-        raise PlatformNotReady
-
     add_entities([linkplay])
     hass.data[DATA_LINKPLAY].append(linkplay)
 
@@ -124,15 +140,15 @@ class LinkPlayDevice(MediaPlayerDevice):
         self._name = name
         self._host = host
         self._state = STATE_UNKNOWN
-        self._volume = None
+        self._volume = 0
         self._source = None
         self._source_list = SOURCES.copy()
         self._sound_mode = None
-        self._muted = None
-        self._seek_position = None
-        self._duration = None
+        self._muted = False
+        self._seek_position = 0
+        self._duration = 0
         self._position_updated_at = None
-        self._shuffle = None
+        self._shuffle = False
         self._media_album = None
         self._media_artist = None
         self._media_title = None
@@ -145,6 +161,11 @@ class LinkPlayDevice(MediaPlayerDevice):
         else:
             self._lfmapi = None
         self._upnp_device = None
+        self._slave_mode = False
+        self._slave_ip = None
+        self._master = None
+        self._wifi_channel = None
+        self._ssid = None
 
     @property
     def name(self):
@@ -236,6 +257,26 @@ class LinkPlayDevice(MediaPlayerDevice):
         """Content type of current playing media."""
         return MEDIA_TYPE_MUSIC
 
+    @property
+    def ssid(self):
+        """SSID to use for multiroom configuration."""
+        return self._ssid
+
+    @property
+    def wifi_channel(self):
+        """Wifi channel to use for multiroom configuration."""
+        return self._wifi_channel
+
+    @property
+    def slave_ip(self):
+        """Ip used in multiroom configuration."""
+        return self._slave_ip
+
+    @property
+    def lpapi(self):
+        """Device API."""
+        return self._lpapi
+
     def turn_off(self):
         """Turn off media player."""
         self._lpapi.call('GET', 'getShutdown')
@@ -247,59 +288,94 @@ class LinkPlayDevice(MediaPlayerDevice):
     def set_volume_level(self, volume):
         """Set volume level, range 0..1."""
         volume = str(round(volume * MAX_VOL))
-        self._lpapi.call('GET', 'setPlayerCmd:vol:{0}'.format(str(volume)))
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to set volume. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            self._lpapi.call('GET', 'setPlayerCmd:vol:{0}'.format(str(volume)))
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to set volume. Got response: %s",
+                                value)
+        else:
+            self._master.lpapi.call('GET',
+                                    'multiroom:SlaveVolume:{0}:{1}'.format(
+                                        self._slave_ip, str(volume)))
+            value = self._master.lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to set volume. Got response: %s",
+                                value)
 
     def mute_volume(self, mute):
         """Mute (true) or unmute (false) media player."""
-        self._lpapi.call('GET', 'setPlayerCmd:mute:{0}'.format(str(int(mute))))
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to mute/unmute volume. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            self._lpapi.call('GET',
+                             'setPlayerCmd:mute:{0}'.format(str(int(mute))))
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed mute/unmute volume. Got response: %s",
+                                value)
+        else:
+            self._master.lpapi.call('GET',
+                                    'multiroom:SlaveMute:{0}:{1}'.format(
+                                        self._slave_ip, str(int(mute))))
+            value = self._master.lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed mute/unmute volume. Got response: %s",
+                                value)
 
     def media_play(self):
         """Send play command."""
-        self._lpapi.call('GET', 'setPlayerCmd:play')
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to start playback. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            self._lpapi.call('GET', 'setPlayerCmd:play')
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to start playback. Got response: %s",
+                                value)
+        else:
+            self._master.media_play()
 
     def media_pause(self):
         """Send play command."""
-        self._lpapi.call('GET', 'setPlayerCmd:pause')
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to pause playback. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            self._lpapi.call('GET', 'setPlayerCmd:pause')
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to pause playback. Got response: %s",
+                                value)
+        else:
+            self._master.media_pause()
 
     def media_next_track(self):
         """Send next track command."""
-        self._lpapi.call('GET', 'setPlayerCmd:next')
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to skip to next track. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            self._lpapi.call('GET', 'setPlayerCmd:next')
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed skip to next track. Got response: %s",
+                                value)
+        else:
+            self._master.media_next_track()
 
     def media_previous_track(self):
         """Send previous track command."""
-        self._lpapi.call('GET', 'setPlayerCmd:prev')
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to skip to previous track."
-                            " Got response: %s", value)
+        if not self._slave_mode:
+            self._lpapi.call('GET', 'setPlayerCmd:prev')
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to skip to previous track."
+                                " Got response: %s", value)
+        else:
+            self._master.media_previous_track()
 
     def media_seek(self, position):
         """Send media_seek command to media player."""
-        self._lpapi.call('GET', 'setPlayerCmd:seek:{0}'.format(str(position)))
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to seek. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            self._lpapi.call('GET',
+                             'setPlayerCmd:seek:{0}'.format(str(position)))
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to seek. Got response: %s",
+                                value)
+        else:
+            self._master.media_seek(position)
 
     def play_media(self, media_type, media_id, **kwargs):
         """Play media from a URL or file."""
@@ -354,6 +430,83 @@ class LinkPlayDevice(MediaPlayerDevice):
             _LOGGER.warning("Failed to press preset button %s. "
                             "Got response: %s", preset, value)
 
+    def connect_multiroom(self, master_id):
+        """Add selected slaves to multiroom configuration."""
+        for device in self.hass.data[DATA_LINKPLAY]:
+            if device.entity_id == master_id:
+                cmd = "ConnectMasterAp:ssid={0}:ch={1}:auth=OPEN:".format(
+                    device.ssid, device.wifi_channel) + \
+                    "encry=NONE:pwd=:chext=0"
+                self._lpapi.call('GET', cmd)
+                value = self._lpapi.data
+                if value == "OK":
+                    self._slave_mode = True
+                    self._master = device
+                else:
+                    _LOGGER.warning("Failed to connect multiroom. "
+                                    "Got response: %s", value)
+
+    def remove_slaves(self, slave_ids):
+        """Remove selected slaves from multiroom configuration."""
+        for slave_id in slave_ids:
+            for device in self.hass.data[DATA_LINKPLAY]:
+                if device.entity_id == slave_id:
+                    self._lpapi.call('GET',
+                                     'multiroom:SlaveKickout:{0}'.format(
+                                         device.slave_ip))
+                    value = self._lpapi.data
+                    if value == "OK":
+                        device.set_slave_mode(False)
+                        device.set_slave_ip(None)
+                        device.set_master(None)
+                    else:
+                        _LOGGER.warning("Failed to remove slave %s. "
+                                        "Got response: %s", slave_id, value)
+
+    def set_master(self, master):
+        """Set master device for multiroom configuration."""
+        self._master = master
+
+    def set_slave_mode(self, slave_mode):
+        """Set current device as slave in a multiroom configuration."""
+        self._slave_mode = slave_mode
+
+    def set_media_title(self, title):
+        """Set the media title property."""
+        self._media_title = title
+
+    def set_media_artist(self, artist):
+        """Set the media artist property."""
+        self._media_artist = artist
+
+    def set_volume(self, volume):
+        """Set the volume property."""
+        self._volume = volume
+
+    def set_muted(self, mute):
+        """Set the muted property."""
+        self._muted = mute
+
+    def set_state(self, state):
+        """Set the state property."""
+        self._state = state
+
+    def set_slave_ip(self, slave_ip):
+        """Set the slave ip property."""
+        self._slave_ip = slave_ip
+
+    def set_seek_position(self, position):
+        """Set the seek position property."""
+        self._seek_position = position
+
+    def set_duration(self, duration):
+        """Set the duration property."""
+        self._duration = duration
+
+    def set_position_updated_at(self, time):
+        """Set the position updated at property."""
+        self._position_updated_at = time
+
     def _is_playing_new_track(self, status):
         """Check if track is changed since last update."""
         if int(int(status['totlen']) / 1000) != self._duration:
@@ -364,8 +517,9 @@ class LinkPlayDevice(MediaPlayerDevice):
                 status['Title']).decode('utf-8') != self._media_title)
         return False
 
-    def _is_playing_spotify(self, player_status):
-        title =  bytes.fromhex(player_status['Title']).decode('utf-8')
+    @classmethod
+    def _is_playing_spotify(cls, player_status):
+        title = bytes.fromhex(player_status['Title']).decode('utf-8')
         artist = bytes.fromhex(player_status['Artist']).decode('utf-8')
         return bool(((title == 'Unknown') and
                      (artist == 'Unknown')))
@@ -431,10 +585,14 @@ class LinkPlayDevice(MediaPlayerDevice):
         import upnpclient
         from netdisco.ssdp import scan
 
+        if self._slave_mode:
+            return True
+
         if self._upnp_device is None:
             for entry in scan(UPNP_TIMEOUT):
                 try:
-                    if upnpclient.Device(entry.location).friendly_name == self._name:
+                    if upnpclient.Device(entry.location).friendly_name == \
+                       self._name:
                         self._upnp_device = upnpclient.Device(entry.location)
                         break
                 except Exception:
@@ -444,7 +602,8 @@ class LinkPlayDevice(MediaPlayerDevice):
         player_api_result = self._lpapi.data
 
         if player_api_result is None:
-            return False
+            self._media_title = 'Unable to connect to device'
+            return True
 
         try:
             player_status = json.loads(player_api_result)
@@ -466,6 +625,10 @@ class LinkPlayDevice(MediaPlayerDevice):
                     _LOGGER.warning("REST result could not be parsed as JSON")
                     _LOGGER.debug("Erroneous JSON: %s", device_api_result)
                 if isinstance(device_status, dict):
+                    self._wifi_channel = device_status['WifiChannel']
+                    self._ssid = \
+                        binascii.hexlify(device_status['ssid'].encode('utf-8'))
+                    self._ssid = self._ssid.decode()
                     if self._name is None:
                         self._name = device_status['DeviceName']
 
@@ -505,6 +668,37 @@ class LinkPlayDevice(MediaPlayerDevice):
         else:
             _LOGGER.warning("JSON result was not a dictionary")
 
+        # Get  multiroom slave information
+        self._lpapi.call('GET', 'multiroom:getSlaveList')
+        slave_list = self._lpapi.data
+
+        try:
+            slave_list = json.loads(slave_list)
+        except ValueError:
+            _LOGGER.warning("REST result could not be parsed as JSON")
+            _LOGGER.debug("Erroneous JSON: %s", slave_list)
+
+        if isinstance(slave_list, dict):
+            if int(slave_list['slaves']) > 0:
+                slave_list = slave_list['slave_list']
+                for slave in slave_list:
+                    for device in self.hass.data[DATA_LINKPLAY]:
+                        if device.name == slave['name']:
+                            device.set_master(self)
+                            device.set_slave_mode(True)
+                            device.set_media_title("Slave mode")
+                            device.set_media_artist(self.name)
+                            device.set_volume(slave['volume'])
+                            device.set_muted(slave['mute'])
+                            device.set_state(self.state)
+                            device.set_slave_ip(slave['ip'])
+                            device.set_seek_position(self.media_position)
+                            device.set_duration(self.media_duration)
+                            device.set_position_updated_at(
+                                self.media_position_updated_at)
+        else:
+            _LOGGER.warning("JSON result was not a dictionary")
+
         return True
 
 
@@ -528,7 +722,7 @@ class LinkPlayRestData:
         try:
             with requests.Session() as sess:
                 response = sess.send(
-                    self._request, timeout=10)
+                    self._request, timeout=2)
             self.data = response.text
 
         except requests.exceptions.RequestException as ex:
