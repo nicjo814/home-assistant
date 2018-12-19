@@ -432,20 +432,13 @@ class LinkPlayDevice(MediaPlayerDevice):
         from netdisco.ssdp import scan
 
         if self._upnp_device is None:
-            devices = {}
             for entry in scan(UPNP_TIMEOUT):
-                if entry.location in devices:
-                    continue
                 try:
-                    devices[entry.location] = upnpclient.Device(entry.location)
+                    if upnpclient.Device(entry.location).friendly_name == self._name:
+                        self._upnp_device = upnpclient.Device(entry.location)
+                        break
                 except Exception:
                     pass
-
-            devices = list(devices.values())
-            for device in devices:
-                if device.friendly_name == self._name:
-                    self._upnp_device = device
-                    break
 
         self._lpapi.call('GET', 'getPlayerStatus')
         player_api_result = self._lpapi.data
