@@ -451,12 +451,15 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def set_shuffle(self, shuffle):
         """Change the shuffle mode."""
-        mode = '2' if shuffle else '0'
-        self._lpapi.call('GET', 'setPlayerCmd:loopmode:{0}'.format(mode))
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to change shuffle mode. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            mode = '2' if shuffle else '0'
+            self._lpapi.call('GET', 'setPlayerCmd:loopmode:{0}'.format(mode))
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to change shuffle mode. Got response: %s",
+                                value)
+        else:
+            self._master.set_shuffle(shuffle)
 
     def preset_button(self, preset):
         """Simulate pressing a physical preset button."""
