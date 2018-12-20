@@ -463,11 +463,14 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def preset_button(self, preset):
         """Simulate pressing a physical preset button."""
-        self._lpapi.call('GET', 'IOSimuKeyIn:{0}'.format(str(preset).zfill(3)))
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to press preset button %s. "
-                            "Got response: %s", preset, value)
+        if not self._slave_mode:
+            self._lpapi.call('GET', 'IOSimuKeyIn:{0}'.format(str(preset).zfill(3)))
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to press preset button %s. "
+                                "Got response: %s", preset, value)
+        else:
+            self._master.preset_button(preset)
 
     def connect_multiroom(self, master_id):
         """Add selected slaves to multiroom configuration."""
