@@ -398,16 +398,19 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def play_media(self, media_type, media_id, **kwargs):
         """Play media from a URL or file."""
-        if not media_type == MEDIA_TYPE_MUSIC:
-            _LOGGER.error(
-                "Invalid media type %s. Only %s is supported",
-                media_type, MEDIA_TYPE_MUSIC)
-            return
-        self._lpapi.call('GET', 'setPlayerCmd:play:{0}'.format(media_id))
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to play media. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            if not media_type == MEDIA_TYPE_MUSIC:
+                _LOGGER.error(
+                    "Invalid media type %s. Only %s is supported",
+                    media_type, MEDIA_TYPE_MUSIC)
+                return
+            self._lpapi.call('GET', 'setPlayerCmd:play:{0}'.format(media_id))
+            value = self._lpapi.data
+            if value != "OK":
+                _LOGGER.warning("Failed to play media. Got response: %s",
+                                value)
+        else:
+            self._master.play_media(media_type, media_id)
 
     def select_source(self, source):
         """Select input source."""
@@ -643,7 +646,6 @@ class LinkPlayDevice(MediaPlayerDevice):
                 self._ssid = \
                     binascii.hexlify(device_status['ssid'].encode('utf-8'))
                 self._ssid = self._ssid.decode()
-                self._playing_spotify = bool(device_status['spotify_active'])
 
             # Update variables that changes during playback of a track.
             self._volume = player_status['vol']
@@ -661,6 +663,10 @@ class LinkPlayDevice(MediaPlayerDevice):
                                            'WiFi')
             self._sound_mode = SOUND_MODES.get(player_status['eq'])
             self._shuffle = True if player_status['loop'] == '2' else False
+            if player_status['mode'] == '31':
+                self._playing_spotify = True
+            else:
+                self._playing_spotify = False
 
             if self._is_playing_new_track(player_status):
                 # Only do some things when a new track is playing.
