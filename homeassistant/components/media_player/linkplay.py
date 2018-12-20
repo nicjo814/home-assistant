@@ -414,16 +414,23 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def select_source(self, source):
         """Select input source."""
-        if source == 'MicroSD':
-            source = 'udisk'
+        if not self._slave_mode:
+            if source == 'MicroSD':
+                temp_source = 'udisk'
+            else:
+                temp_source = source.lower()
+            self._lpapi.call('GET',
+                            'setPlayerCmd:switchmode:{0}'.format(temp_source))
+            value = self._lpapi.data
+            if value == "OK":
+                self._source = source
+                for slave in self._slave_list:
+                    slave.set_source(source)
+            else:
+                _LOGGER.warning("Failed to select source. Got response: %s",
+                                value)
         else:
-            source = source.lower()
-        self._lpapi.call('GET',
-                         'setPlayerCmd:switchmode:{0}'.format(source))
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to select source. Got response: %s",
-                            value)
+            self._master.select_source(source)
 
     def select_sound_mode(self, sound_mode):
         """Set Sound Mode for device."""
@@ -529,6 +536,10 @@ class LinkPlayDevice(MediaPlayerDevice):
         """Set the position updated at property."""
         self._position_updated_at = time
 
+    def set_source(self, source):
+        """Set the source property."""
+        self._source = source
+
     def _is_playing_new_track(self, status):
         """Check if track is changed since last update."""
         if int(int(status['totlen']) / 1000) != self._duration:
@@ -582,7 +593,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             if filename.startswith(tempfile.gettempdir()):
                 os.remove(filename)
 
-        except urllib.error.URLError:
+        except (urllib.error.URLError, ValueError):
             self._media_title = None
             self._media_artist = None
             self._media_album = None
@@ -717,6 +728,7 @@ class LinkPlayDevice(MediaPlayerDevice):
                         device.set_duration(self.media_duration)
                         device.set_position_updated_at(
                             self.media_position_updated_at)
+                        device.set_source(self._source)
         else:
             _LOGGER.warning("JSON result was not a dictionary")
 
