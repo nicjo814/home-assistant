@@ -442,3 +442,23 @@ linkplay_preset_button:
     preset:
       description: The preset button to simulate pressing.
       example: '1'
+
+linkplay_connect_multiroom:
+  description: Connect a slave device to multiroom master device. Platform dependant.
+  fields:
+    entity_id:
+      description: Name of the slave device that should be connected.
+      example: 'media_player.kitchen'
+    master_id:
+      description: Name of the master device to connect to.
+      example: 'media_player.livingroom'
+  
+linkplay_remove_slaves:
+  description: Remove slave device(s) from multiroom master device. Platform dependant.
+  fields:
+    entity_id:
+      description: Name of the master device from which the slaves should be removed.
+      example: 'media_player.kitchen'
+    slave_ids:
+      description: Name of the slave device(s) to remove.
+      example: 'media_player.livingroom, media_player.bedroom'
