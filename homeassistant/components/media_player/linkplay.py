@@ -59,7 +59,7 @@ MAX_VOL = 100
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_HOST): cv.string,
-    vol.Optional(CONF_NAME): cv.string,
+    vol.Required(CONF_NAME): cv.string,
     vol.Optional(CONF_LASTFM_API_KEY): cv.string
 })
 
