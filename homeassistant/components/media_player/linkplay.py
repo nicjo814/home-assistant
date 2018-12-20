@@ -420,7 +420,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             else:
                 temp_source = source.lower()
             self._lpapi.call('GET',
-                            'setPlayerCmd:switchmode:{0}'.format(temp_source))
+                             'setPlayerCmd:switchmode:{0}'.format(temp_source))
             value = self._lpapi.data
             if value == "OK":
                 self._source = source
@@ -456,15 +456,16 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._lpapi.call('GET', 'setPlayerCmd:loopmode:{0}'.format(mode))
             value = self._lpapi.data
             if value != "OK":
-                _LOGGER.warning("Failed to change shuffle mode. Got response: %s",
-                                value)
+                _LOGGER.warning("Failed to change shuffle mode. "
+                                "Got response: %s", value)
         else:
             self._master.set_shuffle(shuffle)
 
     def preset_button(self, preset):
         """Simulate pressing a physical preset button."""
         if not self._slave_mode:
-            self._lpapi.call('GET', 'IOSimuKeyIn:{0}'.format(str(preset).zfill(3)))
+            self._lpapi.call('GET',
+                             'IOSimuKeyIn:{0}'.format(str(preset).zfill(3)))
             value = self._lpapi.data
             if value != "OK":
                 _LOGGER.warning("Failed to press preset button %s. "
@@ -691,10 +692,7 @@ class LinkPlayDevice(MediaPlayerDevice):
                                            'WiFi')
             self._sound_mode = SOUND_MODES.get(player_status['eq'])
             self._shuffle = True if player_status['loop'] == '2' else False
-            if player_status['mode'] == '31':
-                self._playing_spotify = True
-            else:
-                self._playing_spotify = False
+            self._playing_spotify = bool(player_status['mode'] == '31')
 
             if self._is_playing_new_track(player_status):
                 # Only do some things when a new track is playing.
