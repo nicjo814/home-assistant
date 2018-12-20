@@ -166,6 +166,7 @@ class LinkPlayDevice(MediaPlayerDevice):
         self._master = None
         self._wifi_channel = None
         self._ssid = None
+        self._playing_spotify = None
 
     @property
     def name(self):
@@ -517,16 +518,15 @@ class LinkPlayDevice(MediaPlayerDevice):
                 status['Title']).decode('utf-8') != self._media_title)
         return False
 
-    @classmethod
-    def _is_playing_spotify(cls, player_status):
-        title = bytes.fromhex(player_status['Title']).decode('utf-8')
-        artist = bytes.fromhex(player_status['Artist']).decode('utf-8')
-        return bool(((title == 'Unknown') and
-                     (artist == 'Unknown')))
-
     def _update_via_upnp(self):
         """Update track info via UPNP."""
         import validators
+
+        if self._upnp_device is None:
+            self._media_title = None
+            self._media_album = None
+            self._media_image_url = None
+            return
 
         media_info = self._upnp_device.AVTransport.GetMediaInfo(InstanceID=0)
         media_info = media_info.get('CurrentURIMetaData')
@@ -592,10 +592,10 @@ class LinkPlayDevice(MediaPlayerDevice):
             for entry in scan(UPNP_TIMEOUT):
                 try:
                     if upnpclient.Device(entry.location).friendly_name == \
-                       self._name:
+                            self._name:
                         self._upnp_device = upnpclient.Device(entry.location)
                         break
-                except Exception:
+                except requests.exceptions.HTTPError:
                     pass
 
         self._lpapi.call('GET', 'getPlayerStatus')
@@ -613,24 +613,19 @@ class LinkPlayDevice(MediaPlayerDevice):
             player_status = None
 
         if isinstance(player_status, dict):
-
-            if self._first_update:
-                # Get device information only at startup.
-                self._first_update = False
-                self._lpapi.call('GET', 'getStatus')
-                device_api_result = self._lpapi.data
-                try:
-                    device_status = json.loads(device_api_result)
-                except ValueError:
-                    _LOGGER.warning("REST result could not be parsed as JSON")
-                    _LOGGER.debug("Erroneous JSON: %s", device_api_result)
-                if isinstance(device_status, dict):
-                    self._wifi_channel = device_status['WifiChannel']
-                    self._ssid = \
-                        binascii.hexlify(device_status['ssid'].encode('utf-8'))
-                    self._ssid = self._ssid.decode()
-                    if self._name is None:
-                        self._name = device_status['DeviceName']
+            self._lpapi.call('GET', 'getStatus')
+            device_api_result = self._lpapi.data
+            try:
+                device_status = json.loads(device_api_result)
+            except ValueError:
+                _LOGGER.warning("REST result could not be parsed as JSON")
+                _LOGGER.debug("Erroneous JSON: %s", device_api_result)
+            if isinstance(device_status, dict):
+                self._wifi_channel = device_status['WifiChannel']
+                self._ssid = \
+                    binascii.hexlify(device_status['ssid'].encode('utf-8'))
+                self._ssid = self._ssid.decode()
+                self._playing_spotify = bool(device_status['spotify_active'])
 
             # Update variables that changes during playback of a track.
             self._volume = player_status['vol']
@@ -651,8 +646,7 @@ class LinkPlayDevice(MediaPlayerDevice):
 
             if self._is_playing_new_track(player_status):
                 # Only do some things when a new track is playing.
-                if self._is_playing_spotify(player_status) or \
-                   player_status['totlen'] == '0':
+                if self._playing_spotify or player_status['totlen'] == '0':
                     self._update_via_upnp()
 
                 else:
