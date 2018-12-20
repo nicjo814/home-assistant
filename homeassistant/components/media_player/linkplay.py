@@ -167,6 +167,7 @@ class LinkPlayDevice(MediaPlayerDevice):
         self._wifi_channel = None
         self._ssid = None
         self._playing_spotify = None
+        self._slave_list = None
 
     @property
     def name(self):
@@ -292,7 +293,9 @@ class LinkPlayDevice(MediaPlayerDevice):
         if not self._slave_mode:
             self._lpapi.call('GET', 'setPlayerCmd:vol:{0}'.format(str(volume)))
             value = self._lpapi.data
-            if value != "OK":
+            if value == "OK":
+                self._volume = volume
+            else:
                 _LOGGER.warning("Failed to set volume. Got response: %s",
                                 value)
         else:
@@ -300,7 +303,9 @@ class LinkPlayDevice(MediaPlayerDevice):
                                     'multiroom:SlaveVolume:{0}:{1}'.format(
                                         self._slave_ip, str(volume)))
             value = self._master.lpapi.data
-            if value != "OK":
+            if value == "OK":
+                self._volume = volume
+            else:
                 _LOGGER.warning("Failed to set volume. Got response: %s",
                                 value)
 
@@ -310,7 +315,9 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._lpapi.call('GET',
                              'setPlayerCmd:mute:{0}'.format(str(int(mute))))
             value = self._lpapi.data
-            if value != "OK":
+            if value == "OK":
+                self._muted = mute
+            else:
                 _LOGGER.warning("Failed mute/unmute volume. Got response: %s",
                                 value)
         else:
@@ -318,7 +325,9 @@ class LinkPlayDevice(MediaPlayerDevice):
                                     'multiroom:SlaveMute:{0}:{1}'.format(
                                         self._slave_ip, str(int(mute))))
             value = self._master.lpapi.data
-            if value != "OK":
+            if value == "OK":
+                self._muted = mute
+            else:
                 _LOGGER.warning("Failed mute/unmute volume. Got response: %s",
                                 value)
 
@@ -327,7 +336,11 @@ class LinkPlayDevice(MediaPlayerDevice):
         if not self._slave_mode:
             self._lpapi.call('GET', 'setPlayerCmd:play')
             value = self._lpapi.data
-            if value != "OK":
+            if value == "OK":
+                self._state = STATE_PLAYING
+                for slave in self._slave_list:
+                    slave.set_state(STATE_PLAYING)
+            else:
                 _LOGGER.warning("Failed to start playback. Got response: %s",
                                 value)
         else:
@@ -338,7 +351,11 @@ class LinkPlayDevice(MediaPlayerDevice):
         if not self._slave_mode:
             self._lpapi.call('GET', 'setPlayerCmd:pause')
             value = self._lpapi.data
-            if value != "OK":
+            if value == "OK":
+                self._state = STATE_PAUSED
+                for slave in self._slave_list:
+                    slave.set_state(STATE_PAUSED)
+            else:
                 _LOGGER.warning("Failed to pause playback. Got response: %s",
                                 value)
         else:
@@ -672,12 +689,14 @@ class LinkPlayDevice(MediaPlayerDevice):
             _LOGGER.warning("REST result could not be parsed as JSON")
             _LOGGER.debug("Erroneous JSON: %s", slave_list)
 
+        self._slave_list = []
         if isinstance(slave_list, dict):
             if int(slave_list['slaves']) > 0:
                 slave_list = slave_list['slave_list']
                 for slave in slave_list:
                     for device in self.hass.data[DATA_LINKPLAY]:
                         if device.name == slave['name']:
+                            self._slave_list.append(device)
                             device.set_master(self)
                             device.set_slave_mode(True)
                             device.set_media_title("Slave mode")
