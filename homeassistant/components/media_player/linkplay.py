@@ -434,13 +434,20 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def select_sound_mode(self, sound_mode):
         """Set Sound Mode for device."""
-        mode = list(SOUND_MODES.keys())[list(
-            SOUND_MODES.values()).index(sound_mode)]
-        self._lpapi.call('GET', 'setPlayerCmd:equalizer:{0}'.format(mode))
-        value = self._lpapi.data
-        if value != "OK":
-            _LOGGER.warning("Failed to set sound mode. Got response: %s",
-                            value)
+        if not self._slave_mode:
+            mode = list(SOUND_MODES.keys())[list(
+                SOUND_MODES.values()).index(sound_mode)]
+            self._lpapi.call('GET', 'setPlayerCmd:equalizer:{0}'.format(mode))
+            value = self._lpapi.data
+            if value == "OK":
+                self._sound_mode = sound_mode
+                for slave in self._slave_list:
+                    slave.set_sound_mode(sound_mode)
+            else:
+                _LOGGER.warning("Failed to set sound mode. Got response: %s",
+                                value)
+        else:
+            self._master.select_sound_mode(sound_mode)
 
     def set_shuffle(self, shuffle):
         """Change the shuffle mode."""
@@ -539,6 +546,10 @@ class LinkPlayDevice(MediaPlayerDevice):
     def set_source(self, source):
         """Set the source property."""
         self._source = source
+
+    def set_sound_mode(self, mode):
+        """Set the sound mode property."""
+        self._sound_mode = mode
 
     def _is_playing_new_track(self, status):
         """Check if track is changed since last update."""
@@ -729,6 +740,7 @@ class LinkPlayDevice(MediaPlayerDevice):
                         device.set_position_updated_at(
                             self.media_position_updated_at)
                         device.set_source(self._source)
+                        device.set_sound_mode(self._sound_mode)
         else:
             _LOGGER.warning("JSON result was not a dictionary")
 
