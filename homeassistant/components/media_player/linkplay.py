@@ -99,7 +99,7 @@ UPNP_TIMEOUT = 5
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the LinkPlay device."""
     if DATA_LINKPLAY not in hass.data:
-        hass.data[DATA_LINKPLAY] = []
+        hass.data[DATA_LINKPLAY] = {}
 
     def _service_handler(service):
         """Map services to method of Linkplay devices."""
@@ -111,7 +111,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                   if key != ATTR_ENTITY_ID}
         entity_ids = service.data.get(ATTR_ENTITY_ID)
         if entity_ids:
-            target_players = [player for player in hass.data[DATA_LINKPLAY]
+            target_players = [player for player in
+                              hass.data[DATA_LINKPLAY].values()
                               if player.entity_id in entity_ids]
         else:
             target_players = None
@@ -129,7 +130,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                               config.get(CONF_LASTFM_API_KEY))
 
     add_entities([linkplay])
-    hass.data[DATA_LINKPLAY].append(linkplay)
+    hass.data[DATA_LINKPLAY][config.get(CONF_NAME)] = linkplay
 
 
 class LinkPlayDevice(MediaPlayerDevice):
@@ -450,7 +451,7 @@ class LinkPlayDevice(MediaPlayerDevice):
 
     def connect_multiroom(self, master_id):
         """Add selected slaves to multiroom configuration."""
-        for device in self.hass.data[DATA_LINKPLAY]:
+        for device in self.hass.data[DATA_LINKPLAY].values():
             if device.entity_id == master_id:
                 cmd = "ConnectMasterAp:ssid={0}:ch={1}:auth=OPEN:".format(
                     device.ssid, device.wifi_channel) + \
@@ -467,7 +468,7 @@ class LinkPlayDevice(MediaPlayerDevice):
     def remove_slaves(self, slave_ids):
         """Remove selected slaves from multiroom configuration."""
         for slave_id in slave_ids:
-            for device in self.hass.data[DATA_LINKPLAY]:
+            for device in self.hass.data[DATA_LINKPLAY].values():
                 if device.entity_id == slave_id:
                     self._lpapi.call('GET',
                                      'multiroom:SlaveKickout:{0}'.format(
@@ -694,21 +695,22 @@ class LinkPlayDevice(MediaPlayerDevice):
             if int(slave_list['slaves']) > 0:
                 slave_list = slave_list['slave_list']
                 for slave in slave_list:
-                    for device in self.hass.data[DATA_LINKPLAY]:
-                        if device.name == slave['name']:
-                            self._slave_list.append(device)
-                            device.set_master(self)
-                            device.set_slave_mode(True)
-                            device.set_media_title("Slave mode")
-                            device.set_media_artist(self.name)
-                            device.set_volume(slave['volume'])
-                            device.set_muted(slave['mute'])
-                            device.set_state(self.state)
-                            device.set_slave_ip(slave['ip'])
-                            device.set_seek_position(self.media_position)
-                            device.set_duration(self.media_duration)
-                            device.set_position_updated_at(
-                                self.media_position_updated_at)
+                    device = self.hass.data[DATA_LINKPLAY].get(slave['name'],
+                                                               None)
+                    if device:
+                        self._slave_list.append(device)
+                        device.set_master(self)
+                        device.set_slave_mode(True)
+                        device.set_media_title("Slave mode")
+                        device.set_media_artist(self.name)
+                        device.set_volume(slave['volume'])
+                        device.set_muted(slave['mute'])
+                        device.set_state(self.state)
+                        device.set_slave_ip(slave['ip'])
+                        device.set_seek_position(self.media_position)
+                        device.set_duration(self.media_duration)
+                        device.set_position_updated_at(
+                            self.media_position_updated_at)
         else:
             _LOGGER.warning("JSON result was not a dictionary")
 
