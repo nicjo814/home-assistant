@@ -155,7 +155,6 @@ class LinkPlayDevice(MediaPlayerDevice):
         self._media_title = None
         self._lpapi = LinkPlayRestData(self._host)
         self._media_image_url = None
-        self._media_uri = None
         self._first_update = True
         if lfm_api_key is not None:
             self._lfmapi = LastFMRestData(lfm_api_key)
@@ -579,6 +578,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             return
 
         media_info = self._upnp_device.AVTransport.GetMediaInfo(InstanceID=0)
+        _LOGGER.warning("MyWarnig: %s", media_info)
         media_info = media_info.get('CurrentURIMetaData')
         xml_tree = ET.fromstring(media_info)
         xml_path = "{urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/}item/"
@@ -597,24 +597,6 @@ class LinkPlayDevice(MediaPlayerDevice):
 
         if not validators.url(self._media_image_url):
             self._media_image_url = None
-
-    def _update_from_id3(self):
-        """Update track info with eyed3."""
-        import eyed3
-        try:
-            filename, header = urllib.request.urlretrieve(self._media_uri)
-            audiofile = eyed3.load(filename)
-            self._media_title = audiofile.tag.title
-            self._media_artist = audiofile.tag.artist
-            self._media_album = audiofile.tag.album
-            # Remove tempfile when done
-            if filename.startswith(tempfile.gettempdir()):
-                os.remove(filename)
-
-        except (urllib.error.URLError, ValueError):
-            self._media_title = None
-            self._media_artist = None
-            self._media_album = None
 
     def _get_lastfm_coverart(self):
         """Get cover art from last.fm."""
@@ -681,8 +663,6 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._muted = player_status['mute']
             self._seek_position = int(int(player_status['curpos']) / 1000)
             self._position_updated_at = utcnow()
-            self._media_uri = str(bytearray.fromhex(
-                player_status['iuri']).decode())
             self._state = {
                 'stop': STATE_PAUSED,
                 'play': STATE_PLAYING,
@@ -696,16 +676,15 @@ class LinkPlayDevice(MediaPlayerDevice):
 
             if self._is_playing_new_track(player_status):
                 # Only do some things when a new track is playing.
-                if self._playing_spotify or player_status['totlen'] == '0':
-                    self._update_via_upnp()
+                self._update_via_upnp()
 
-                else:
-                    self._update_from_id3()
-                    if self._lfmapi is not None and\
-                            self._media_title is not None:
-                        self._get_lastfm_coverart()
-                    else:
-                        self._media_image_url = None
+                #else:
+                #    self._update_from_id3()
+                #    if self._lfmapi is not None and\
+                #            self._media_title is not None:
+                #        self._get_lastfm_coverart()
+                #    else:
+                #        self._media_image_url = None
 
             self._duration = int(int(player_status['totlen']) / 1000)
 
