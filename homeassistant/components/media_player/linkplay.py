@@ -681,8 +681,11 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._muted = player_status['mute']
             self._seek_position = int(int(player_status['curpos']) / 1000)
             self._position_updated_at = utcnow()
-            self._media_uri = str(bytearray.fromhex(
-                player_status['iuri']).decode())
+            try:
+                self._media_uri = str(bytearray.fromhex(
+                    player_status['iuri']).decode())
+            except KeyError:
+                self._media_uri = None
             self._state = {
                 'stop': STATE_PAUSED,
                 'play': STATE_PLAYING,
@@ -699,7 +702,7 @@ class LinkPlayDevice(MediaPlayerDevice):
                 if self._playing_spotify or player_status['totlen'] == '0':
                     self._update_via_upnp()
 
-                else:
+                elif self._media_uri is not None:
                     self._update_from_id3()
                     if self._lfmapi is not None and\
                             self._media_title is not None:
