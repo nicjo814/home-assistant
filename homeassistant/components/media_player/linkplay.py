@@ -564,8 +564,11 @@ class LinkPlayDevice(MediaPlayerDevice):
             return True
         if status['totlen'] == '0':
             # Special case when listening to radio
-            return bool(bytes.fromhex(
-                status['Title']).decode('utf-8') != self._media_title)
+            try:
+                return bool(bytes.fromhex(
+                    status['Title']).decode('utf-8') != self._media_title)
+            except ValueError:
+                return True
         return False
 
     def _update_via_upnp(self):
