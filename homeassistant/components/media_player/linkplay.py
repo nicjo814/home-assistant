@@ -169,6 +169,7 @@ class LinkPlayDevice(MediaPlayerDevice):
         self._ssid = None
         self._playing_spotify = None
         self._slave_list = None
+        self._new_song = True
 
     @property
     def name(self):
@@ -700,18 +701,17 @@ class LinkPlayDevice(MediaPlayerDevice):
             self._shuffle = True if player_status['loop'] == '2' else False
             self._playing_spotify = bool(player_status['mode'] == '31')
 
-            if self._is_playing_new_track(player_status):
-                # Only do some things when a new track is playing.
-                if self._playing_spotify or player_status['totlen'] == '0':
-                    self._update_via_upnp()
+            self._new_song = self._is_playing_new_track(player_status)
+            if self._playing_spotify or player_status['totlen'] == '0':
+                self._update_via_upnp()
 
-                elif self._media_uri is not None:
-                    self._update_from_id3()
-                    if self._lfmapi is not None and\
-                            self._media_title is not None:
-                        self._get_lastfm_coverart()
-                    else:
-                        self._media_image_url = None
+            elif self._media_uri is not None and self._new_song:
+                self._update_from_id3()
+                if self._lfmapi is not None and\
+                        self._media_title is not None:
+                    self._get_lastfm_coverart()
+                else:
+                    self._media_image_url = None
 
             self._duration = int(int(player_status['totlen']) / 1000)
 
