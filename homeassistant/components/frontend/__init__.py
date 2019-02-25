@@ -1,9 +1,4 @@
-"""
-Handle the frontend for Home Assistant.
-
-For more details about this component, please refer to the documentation at
-https://home-assistant.io/components/frontend/
-"""
+"""Handle the frontend for Home Assistant."""
 import asyncio
 import json
 import logging
@@ -24,7 +19,9 @@ from homeassistant.core import callback
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.loader import bind_hass
 
-REQUIREMENTS = ['home-assistant-frontend==20181126.0']
+from .storage import async_setup_frontend_storage
+
+REQUIREMENTS = ['home-assistant-frontend==20190220.0']
 
 DOMAIN = 'frontend'
 DEPENDENCIES = ['api', 'websocket_api', 'http', 'system_log',
@@ -55,8 +52,8 @@ MANIFEST_JSON = {
 
 for size in (192, 384, 512, 1024):
     MANIFEST_JSON['icons'].append({
-        'src': '/static/icons/favicon-{}x{}.png'.format(size, size),
-        'sizes': '{}x{}'.format(size, size),
+        'src': '/static/icons/favicon-{size}x{size}.png'.format(size=size),
+        'sizes': '{size}x{size}'.format(size=size),
         'type': 'image/png'
     })
 
@@ -195,6 +192,7 @@ def add_manifest_json_key(key, val):
 
 async def async_setup(hass, config):
     """Set up the serving of the frontend."""
+    await async_setup_frontend_storage(hass)
     hass.components.websocket_api.async_register_command(
         WS_TYPE_GET_PANELS, websocket_get_panels, SCHEMA_GET_PANELS)
     hass.components.websocket_api.async_register_command(
@@ -250,7 +248,7 @@ async def async_setup(hass, config):
     await asyncio.wait(
         [async_register_built_in_panel(hass, panel) for panel in (
             'dev-event', 'dev-info', 'dev-service', 'dev-state',
-            'dev-template', 'dev-mqtt', 'kiosk', 'lovelace', 'profile')],
+            'dev-template', 'dev-mqtt', 'kiosk', 'states', 'profile')],
         loop=hass.loop)
 
     hass.data[DATA_FINALIZE_PANEL] = async_finalize_panel
@@ -362,7 +360,6 @@ class IndexView(HomeAssistantView):
     url = '/'
     name = 'frontend:index'
     requires_auth = False
-    extra_urls = ['/states', '/states/{extra}']
 
     def __init__(self, repo_path, js_option):
         """Initialize the frontend view."""

@@ -207,8 +207,8 @@ class ManualAlarm(alarm.AlarmControlPanel, RestoreEntity):
         if self._code is None:
             return None
         if isinstance(self._code, str) and re.search('^\\d+$', self._code):
-            return 'Number'
-        return 'Any'
+            return alarm.FORMAT_NUMBER
+        return alarm.FORMAT_TEXT
 
     def alarm_disarm(self, code=None):
         """Send disarm command."""
@@ -310,7 +310,15 @@ class ManualAlarm(alarm.AlarmControlPanel, RestoreEntity):
 
     async def async_added_to_hass(self):
         """Run when entity about to be added to hass."""
+        await super().async_added_to_hass()
         state = await self.async_get_last_state()
         if state:
-            self._state = state.state
-            self._state_ts = state.last_updated
+            if state.state == STATE_ALARM_PENDING and \
+                    hasattr(state, 'attributes') and \
+                    state.attributes['pre_pending_state']:
+                # If in pending state, we return to the pre_pending_state
+                self._state = state.attributes['pre_pending_state']
+                self._state_ts = dt_util.utcnow()
+            else:
+                self._state = state.state
+                self._state_ts = state.last_updated

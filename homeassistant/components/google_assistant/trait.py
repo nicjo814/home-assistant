@@ -1,8 +1,7 @@
-"""Implement the Smart Home traits."""
+"""Implement the Google Smart Home traits."""
 import logging
 
 from homeassistant.components import (
-    climate,
     cover,
     group,
     fan,
@@ -15,6 +14,7 @@ from homeassistant.components import (
     switch,
     vacuum,
 )
+from homeassistant.components.climate import const as climate
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -24,6 +24,7 @@ from homeassistant.const import (
     TEMP_CELSIUS,
     TEMP_FAHRENHEIT,
     ATTR_SUPPORTED_FEATURES,
+    ATTR_TEMPERATURE,
 )
 from homeassistant.core import DOMAIN as HA_DOMAIN
 from homeassistant.util import color as color_util, temperature as temp_util
@@ -516,8 +517,11 @@ class TemperatureSettingTrait(_Trait):
     hass_to_google = {
         climate.STATE_HEAT: 'heat',
         climate.STATE_COOL: 'cool',
-        climate.STATE_OFF: 'off',
+        STATE_OFF: 'off',
         climate.STATE_AUTO: 'heatcool',
+        climate.STATE_FAN_ONLY: 'fan-only',
+        climate.STATE_DRY: 'dry',
+        climate.STATE_ECO: 'eco'
     }
     google_to_hass = {value: key for key, value in hass_to_google.items()}
 
@@ -573,7 +577,7 @@ class TemperatureSettingTrait(_Trait):
                 round(temp_util.convert(attrs[climate.ATTR_TARGET_TEMP_LOW],
                                         unit, TEMP_CELSIUS), 1)
         else:
-            target_temp = attrs.get(climate.ATTR_TEMPERATURE)
+            target_temp = attrs.get(ATTR_TEMPERATURE)
             if target_temp is not None:
                 response['thermostatTemperatureSetpoint'] = round(
                     temp_util.convert(target_temp, unit, TEMP_CELSIUS), 1)
@@ -588,8 +592,11 @@ class TemperatureSettingTrait(_Trait):
         max_temp = self.state.attributes[climate.ATTR_MAX_TEMP]
 
         if command == COMMAND_THERMOSTAT_TEMPERATURE_SETPOINT:
-            temp = temp_util.convert(params['thermostatTemperatureSetpoint'],
-                                     TEMP_CELSIUS, unit)
+            temp = temp_util.convert(
+                params['thermostatTemperatureSetpoint'], TEMP_CELSIUS,
+                unit)
+            if unit == TEMP_FAHRENHEIT:
+                temp = round(temp)
 
             if temp < min_temp or temp > max_temp:
                 raise SmartHomeError(
@@ -600,13 +607,15 @@ class TemperatureSettingTrait(_Trait):
             await self.hass.services.async_call(
                 climate.DOMAIN, climate.SERVICE_SET_TEMPERATURE, {
                     ATTR_ENTITY_ID: self.state.entity_id,
-                    climate.ATTR_TEMPERATURE: temp
+                    ATTR_TEMPERATURE: temp
                 }, blocking=True)
 
         elif command == COMMAND_THERMOSTAT_TEMPERATURE_SET_RANGE:
             temp_high = temp_util.convert(
                 params['thermostatTemperatureSetpointHigh'], TEMP_CELSIUS,
                 unit)
+            if unit == TEMP_FAHRENHEIT:
+                temp_high = round(temp_high)
 
             if temp_high < min_temp or temp_high > max_temp:
                 raise SmartHomeError(
@@ -615,7 +624,10 @@ class TemperatureSettingTrait(_Trait):
                     "{} and {}".format(min_temp, max_temp))
 
             temp_low = temp_util.convert(
-                params['thermostatTemperatureSetpointLow'], TEMP_CELSIUS, unit)
+                params['thermostatTemperatureSetpointLow'], TEMP_CELSIUS,
+                unit)
+            if unit == TEMP_FAHRENHEIT:
+                temp_low = round(temp_low)
 
             if temp_low < min_temp or temp_low > max_temp:
                 raise SmartHomeError(

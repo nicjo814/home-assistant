@@ -12,15 +12,16 @@ import time
 import voluptuous as vol
 
 from homeassistant.components.media_player import (
-    MEDIA_TYPE_MUSIC, PLATFORM_SCHEMA, SUPPORT_NEXT_TRACK, SUPPORT_PAUSE,
-    SUPPORT_PLAY, SUPPORT_PREVIOUS_TRACK, SUPPORT_SEEK, SUPPORT_VOLUME_SET,
-    MediaPlayerDevice)
+    MediaPlayerDevice, PLATFORM_SCHEMA)
+from homeassistant.components.media_player.const import (
+    MEDIA_TYPE_MUSIC, SUPPORT_NEXT_TRACK, SUPPORT_PAUSE,
+    SUPPORT_PLAY, SUPPORT_PREVIOUS_TRACK, SUPPORT_SEEK, SUPPORT_VOLUME_SET)
 from homeassistant.const import (
     CONF_HOST, CONF_NAME, CONF_PORT, STATE_OFF, STATE_PAUSED, STATE_PLAYING)
 import homeassistant.helpers.config_validation as cv
 from homeassistant.util.json import load_json, save_json
 
-REQUIREMENTS = ['websocket-client==0.37.0']
+REQUIREMENTS = ['websocket-client==0.54.0']
 
 _CONFIGURING = {}
 _LOGGER = logging.getLogger(__name__)
@@ -155,6 +156,7 @@ class GPMDP(MediaPlayerDevice):
         self._duration = None
         self._volume = None
         self._request_id = 0
+        self._available = True
 
     def get_ws(self):
         """Check if the websocket is setup and connected."""
@@ -200,22 +202,31 @@ class GPMDP(MediaPlayerDevice):
     def update(self):
         """Get the latest details from the player."""
         time.sleep(1)
-        playstate = self.send_gpmdp_msg('playback', 'getPlaybackState')
-        if playstate is None:
-            return
-        self._status = PLAYBACK_DICT[str(playstate['value'])]
-        time_data = self.send_gpmdp_msg('playback', 'getCurrentTime')
-        if time_data is not None:
-            self._seek_position = int(time_data['value'] / 1000)
-        track_data = self.send_gpmdp_msg('playback', 'getCurrentTrack')
-        if track_data is not None:
-            self._title = track_data['value']['title']
-            self._artist = track_data['value']['artist']
-            self._albumart = track_data['value']['albumArt']
-            self._duration = int(track_data['value']['duration'] / 1000)
-        volume_data = self.send_gpmdp_msg('volume', 'getVolume')
-        if volume_data is not None:
-            self._volume = volume_data['value'] / 100
+        try:
+            self._available = True
+            playstate = self.send_gpmdp_msg('playback', 'getPlaybackState')
+            if playstate is None:
+                return
+            self._status = PLAYBACK_DICT[str(playstate['value'])]
+            time_data = self.send_gpmdp_msg('playback', 'getCurrentTime')
+            if time_data is not None:
+                self._seek_position = int(time_data['value'] / 1000)
+            track_data = self.send_gpmdp_msg('playback', 'getCurrentTrack')
+            if track_data is not None:
+                self._title = track_data['value']['title']
+                self._artist = track_data['value']['artist']
+                self._albumart = track_data['value']['albumArt']
+                self._duration = int(track_data['value']['duration'] / 1000)
+            volume_data = self.send_gpmdp_msg('volume', 'getVolume')
+            if volume_data is not None:
+                self._volume = volume_data['value'] / 100
+        except OSError:
+            self._available = False
+
+    @property
+    def available(self):
+        """Return if media player is available."""
+        return self._available
 
     @property
     def media_content_type(self):

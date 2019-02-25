@@ -32,11 +32,11 @@ COMMENT_REQUIREMENTS = (
     'i2csense',
     'credstash',
     'bme680',
-    'homekit',
     'py_noaa',
 )
 
 TEST_REQUIREMENTS = (
+    'aioambient',
     'aioautomatic',
     'aiohttp_cors',
     'aiohue',
@@ -46,10 +46,12 @@ TEST_REQUIREMENTS = (
     'coinmarketcap',
     'defusedxml',
     'dsmr_parser',
+    'eebrightbox',
+    'emulated_roku',
     'enturclient',
     'ephem',
     'evohomeclient',
-    'feedparser',
+    'feedparser-homeassistant',
     'foobot_async',
     'geojson_client',
     'georss_client',
@@ -62,12 +64,14 @@ TEST_REQUIREMENTS = (
     'hdate',
     'holidays',
     'home-assistant-frontend',
+    'homekit',
     'homematicip',
     'influxdb',
     'jsonpath',
     'libpurecoollink',
     'libsoundtouch',
     'luftdaten',
+    'mbddns',
     'mficlient',
     'numpy',
     'paho-mqtt',
@@ -86,6 +90,9 @@ TEST_REQUIREMENTS = (
     'pynx584',
     'pyopenuv',
     'pyotp',
+    'pyps4-homeassistant',
+    'pysmartapp',
+    'pysmartthings',
     'pysonos',
     'pyqwikswitch',
     'PyRMVtransport',
@@ -98,6 +105,7 @@ TEST_REQUIREMENTS = (
     'pyunifi',
     'pyupnp-async',
     'pywebpush',
+    'pyHS100',
     'regenmaschine',
     'restrictedpython',
     'rflink',
@@ -119,6 +127,8 @@ TEST_REQUIREMENTS = (
     'YesssSMS',
     'ruamel.yaml',
     'eyeD3',
+    'zigpy-homeassistant',
+    'bellows-homeassistant',
 )
 
 IGNORE_PACKAGES = (
@@ -210,7 +220,7 @@ def gather_modules():
         for req in module.REQUIREMENTS:
             if req in IGNORE_REQ:
                 continue
-            if '://' in req:
+            if '://' in req and 'pyharmony' not in req:
                 errors.append(
                     "{}[Only pypi dependencies are allowed: {}]".format(
                         package, req))

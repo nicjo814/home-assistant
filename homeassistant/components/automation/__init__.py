@@ -1,9 +1,4 @@
-"""
-Allow to set up simple automation rules via the config file.
-
-For more details about this component, please refer to the documentation at
-https://home-assistant.io/components/automation/
-"""
+"""Allow to set up simple automation rules via the config file."""
 import asyncio
 from functools import partial
 import importlib
@@ -94,11 +89,11 @@ PLATFORM_SCHEMA = vol.Schema({
 })
 
 SERVICE_SCHEMA = vol.Schema({
-    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+    vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids,
 })
 
 TRIGGER_SERVICE_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTITY_ID): cv.entity_ids,
+    vol.Required(ATTR_ENTITY_ID): cv.comp_entity_ids,
     vol.Optional(ATTR_VARIABLES, default={}): dict,
 })
 
@@ -375,7 +370,13 @@ def _async_get_action(hass, config, name):
     async def action(entity_id, variables, context):
         """Execute an action."""
         _LOGGER.info('Executing %s', name)
-        await script_obj.async_run(variables, context)
+
+        try:
+            await script_obj.async_run(variables, context)
+        except Exception as err:  # pylint: disable=broad-except
+            script_obj.async_log_exception(
+                _LOGGER,
+                'Error while executing automation {}'.format(entity_id), err)
 
     return action
 

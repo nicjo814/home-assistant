@@ -1,9 +1,4 @@
-"""
-Support for HomeMatic devices.
-
-For more details about this component, please refer to the documentation at
-https://home-assistant.io/components/homematic/
-"""
+"""Support for HomeMatic devices."""
 from datetime import timedelta
 from functools import partial
 import logging
@@ -13,12 +8,13 @@ import voluptuous as vol
 
 from homeassistant.const import (
     ATTR_ENTITY_ID, ATTR_NAME, CONF_HOST, CONF_HOSTS, CONF_PASSWORD,
-    CONF_PLATFORM, CONF_USERNAME, EVENT_HOMEASSISTANT_STOP, STATE_UNKNOWN)
+    CONF_PLATFORM, CONF_SSL, CONF_USERNAME, CONF_VERIFY_SSL,
+    EVENT_HOMEASSISTANT_STOP, STATE_UNKNOWN)
 from homeassistant.helpers import discovery
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity import Entity
 
-REQUIREMENTS = ['pyhomematic==0.1.52']
+REQUIREMENTS = ['pyhomematic==0.1.56']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,7 +60,7 @@ HM_DEVICE_TYPES = {
     DISCOVER_SWITCHES: [
         'Switch', 'SwitchPowermeter', 'IOSwitch', 'IPSwitch', 'RFSiren',
         'IPSwitchPowermeter', 'HMWIOSwitch', 'Rain', 'EcoLogic',
-        'IPKeySwitchPowermeter', 'IPGarage'],
+        'IPKeySwitchPowermeter', 'IPGarage', 'IPKeySwitch', 'IPMultiIO'],
     DISCOVER_LIGHTS: ['Dimmer', 'KeyDimmer', 'IPKeyDimmer', 'IPDimmer',
                       'ColorEffectLight'],
     DISCOVER_SENSORS: [
@@ -77,7 +73,8 @@ HM_DEVICE_TYPES = {
         'IPSmoke', 'RFSiren', 'PresenceIP', 'IPAreaThermostat',
         'IPWeatherSensor', 'RotaryHandleSensorIP', 'IPPassageSensor',
         'IPKeySwitchPowermeter', 'IPThermostatWall230V', 'IPWeatherSensorPlus',
-        'IPWeatherSensorBasic', 'IPBrightnessSensor', 'IPGarage'],
+        'IPWeatherSensorBasic', 'IPBrightnessSensor', 'IPGarage',
+        'UniversalSensor', 'MotionIPV2', 'IPMultiIO'],
     DISCOVER_CLIMATE: [
         'Thermostat', 'ThermostatWall', 'MAXThermostat', 'ThermostatWall2',
         'MAXWallThermostat', 'IPThermostat', 'IPThermostatWall',
@@ -87,7 +84,8 @@ HM_DEVICE_TYPES = {
         'MotionIP', 'RemoteMotion', 'WeatherSensor', 'TiltSensor',
         'IPShutterContact', 'HMWIOSwitch', 'MaxShutterContact', 'Rain',
         'WiredSensor', 'PresenceIP', 'IPWeatherSensor', 'IPPassageSensor',
-        'SmartwareMotion', 'IPWeatherSensorPlus'],
+        'SmartwareMotion', 'IPWeatherSensorPlus', 'MotionIPV2', 'WaterIP',
+        'IPMultiIO', 'TiltIP'],
     DISCOVER_COVER: ['Blind', 'KeyBlind', 'IPKeyBlind', 'IPKeyBlindTilt'],
     DISCOVER_LOCKS: ['KeyMatic']
 }
@@ -109,8 +107,8 @@ HM_ATTRIBUTE_SUPPORT = {
     'ERROR': ['sabotage', {0: 'No', 1: 'Yes'}],
     'ERROR_SABOTAGE': ['sabotage', {0: 'No', 1: 'Yes'}],
     'SABOTAGE': ['sabotage', {0: 'No', 1: 'Yes'}],
-    'RSSI_PEER': ['rssi', {}],
-    'RSSI_DEVICE': ['rssi', {}],
+    'RSSI_PEER': ['rssi_peer', {}],
+    'RSSI_DEVICE': ['rssi_device', {}],
     'VALVE_STATE': ['valve', {}],
     'LEVEL': ['level', {}],
     'BATTERY_STATE': ['battery', {}],
@@ -173,6 +171,9 @@ DEFAULT_PORT = 2001
 DEFAULT_PATH = ''
 DEFAULT_USERNAME = 'Admin'
 DEFAULT_PASSWORD = ''
+DEFAULT_SSL = False
+DEFAULT_VERIFY_SSL = False
+DEFAULT_CHANNEL = 1
 
 
 DEVICE_SCHEMA = vol.Schema({
@@ -180,7 +181,7 @@ DEVICE_SCHEMA = vol.Schema({
     vol.Required(ATTR_NAME): cv.string,
     vol.Required(ATTR_ADDRESS): cv.string,
     vol.Required(ATTR_INTERFACE): cv.string,
-    vol.Optional(ATTR_CHANNEL, default=1): vol.Coerce(int),
+    vol.Optional(ATTR_CHANNEL, default=DEFAULT_CHANNEL): vol.Coerce(int),
     vol.Optional(ATTR_PARAM): cv.string,
     vol.Optional(ATTR_UNIQUE_ID): cv.string,
 })
@@ -198,6 +199,9 @@ CONFIG_SCHEMA = vol.Schema({
             vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
             vol.Optional(CONF_CALLBACK_IP): cv.string,
             vol.Optional(CONF_CALLBACK_PORT): cv.port,
+            vol.Optional(CONF_SSL, default=DEFAULT_SSL): cv.boolean,
+            vol.Optional(
+                CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): cv.boolean,
         }},
         vol.Optional(CONF_HOSTS, default={}): {cv.match_all: {
             vol.Required(CONF_HOST): cv.string,
@@ -268,6 +272,8 @@ def setup(hass, config):
             'password': rconfig.get(CONF_PASSWORD),
             'callbackip': rconfig.get(CONF_CALLBACK_IP),
             'callbackport': rconfig.get(CONF_CALLBACK_PORT),
+            'ssl': rconfig.get(CONF_SSL),
+            'verify_ssl': rconfig.get(CONF_VERIFY_SSL),
             'connect': True,
         }
 
