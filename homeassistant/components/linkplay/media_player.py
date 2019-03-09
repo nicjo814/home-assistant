@@ -38,6 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 ATTR_MASTER = 'master_id'
 ATTR_PRESET = 'preset'
 ATTR_SLAVES = 'slave_ids'
+CONF_DEVICENAME = 'devicename'
 CONF_LASTFM_API_KEY = 'lastfm_api_key'
 DATA_LINKPLAY = 'linkplay'
 DEFAULT_NAME = 'LinkPlay device'
@@ -60,7 +61,8 @@ MAX_VOL = 100
 
 PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend({
     vol.Required(CONF_HOST): cv.string,
-    vol.Required(CONF_NAME): cv.string,
+    vol.Required(CONF_DEVICENAME): cv.string,
+    vol.Optional(CONF_NAME): cv.string,
     vol.Optional(CONF_LASTFM_API_KEY): cv.string
 })
 
@@ -127,6 +129,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             DOMAIN, service, _service_handler, schema=schema)
 
     linkplay = LinkPlayDevice(config.get(CONF_HOST),
+                              config.get(CONF_DEVICENAME),
                               config.get(CONF_NAME),
                               config.get(CONF_LASTFM_API_KEY))
 
@@ -137,9 +140,13 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 class LinkPlayDevice(MediaPlayerDevice):
     """Representation of a LinkPlay device."""
 
-    def __init__(self, host, name=None, lfm_api_key=None):
+    def __init__(self, host, devicename, name=None, lfm_api_key=None):
         """Initialize the LinkPlay device."""
-        self._name = name
+        self._devicename = devicename
+        if name is not None:
+            self._name = name
+        else:
+            self._name = self._devicename
         self._host = host
         self._state = STATE_UNKNOWN
         self._volume = 0
@@ -647,7 +654,7 @@ class LinkPlayDevice(MediaPlayerDevice):
             for entry in scan(UPNP_TIMEOUT):
                 try:
                     if upnpclient.Device(entry.location).friendly_name == \
-                            self._name:
+                            self._devicename:
                         self._upnp_device = upnpclient.Device(entry.location)
                         break
                 except (requests.exceptions.HTTPError,requests.exceptions.MissingSchema):
